@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual Environment
+voice/
+venv/
+env/
+hotel_env2/
+.venv/
+
+# Environment Variables
+.env
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Cache / Model cache
+.cache/
+models/
+
+# Uploads
+uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ngrok
+ngrok.exe
+ngrok
+
+# python files
+create_qdrant_index.py
+reindex.py
+# json
+hotel-ai-voice-email.json
+token.json

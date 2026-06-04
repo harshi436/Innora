@@ -18,6 +18,7 @@ from database.redis_client import redis_client
 from routes.incoming_call import router as call_router
 from websocket.websocket_server import router as ws_router
 from routes.admin import router as admin_router
+from routes.whatsapp import router as whatsapp_router # this is for whatsapp changes are applied 
 from rag.retrieval_service import ensure_collection, retrieval_service
 
 
@@ -128,6 +129,7 @@ app.add_middleware(
 app.include_router(call_router)
 app.include_router(ws_router)
 app.include_router(admin_router)
+app.include_router(whatsapp_router) 
 
 
 # Health Check

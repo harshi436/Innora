@@ -1716,7 +1716,8 @@ from tts.Greeting_cache import (
 )
 from rag.retrieval_service import retrieval_service
 from utils.email_sender import send_email_async
-from config import settings
+from config import settings    
+from whatsapp.whatsapp_service import send_post_call_summary     #this is for whatsapp setting 
 
 router = APIRouter()
 
@@ -3352,6 +3353,20 @@ async def media_stream(websocket: WebSocket):
             logger.warning("Farewell audio timeout — hanging up anyway")
         except Exception:
             pass
+        
+        
+        # ── WhatsApp post-call summary (fire-and-forget, zero latency impact) ──
+        if caller_number and hotel_id:
+            asyncio.create_task(
+                send_post_call_summary(
+                    guest_number=caller_number,
+                    hotel_id=hotel_id,
+                    hotel_name=hotel_name,
+                    order_items=list(_current_call_order_items),
+                    manager_contact=manager_contact,
+                )
+            )
+
 
         await _twilio_hangup(call_sid)
         try:

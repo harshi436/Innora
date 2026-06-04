@@ -203,7 +203,7 @@ class DeepgramService:
         self._connection.on(LiveTranscriptionEvents.Close,      self._on_close)
 
         options = LiveOptions(
-            model="nova-2",
+            model="nova-3",
             language="multi",
             encoding="mulaw",
             sample_rate=8000,

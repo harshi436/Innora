@@ -128,4 +128,5 @@ class Settings(BaseSettings):
     app_host:  str = Field(default="0.0.0.0", env="APP_HOST")
     app_port:  int = Field(default=8000, env="APP_PORT")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    conversation_log_only: bool = Field(default=True, env="CONVERSATION_LOG_ONLY")
 settings = Settings()

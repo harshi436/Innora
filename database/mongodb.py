@@ -1,3 +1,4 @@
+
 """
 database/mongodb.py — Async MongoDB client. Database: Hotel
 
@@ -41,7 +42,6 @@ class MongoClient:
         try:
             await self._db.hotels.create_index(
                 [("dialed_number", ASCENDING)],
-                name="dialed_number_unique",
                 unique=True
             )
         except Exception as e:
@@ -89,12 +89,14 @@ class MongoClient:
     # ─────────────────────────────────────────────
 
     async def upsert_food_order(self, hotel_id: str, hotel_name: str,
-                                 guest_number: str, guest_room: str, items: List[str]) -> str:
+                                 guest_number: str, guest_room: str, items: List[str],
+                                 replace: bool = False) -> str:
         return await self._upsert_service(
             col="Food_Orders",
             hotel_id=hotel_id, hotel_name=hotel_name,
             guest_number=guest_number, guest_room=guest_room,
             field="food_order", values=items,
+            replace=replace,
         )
 
     async def get_food_orders(self, hotel_id: str) -> Optional[Dict]:
@@ -105,12 +107,14 @@ class MongoClient:
     # ─────────────────────────────────────────────
 
     async def upsert_room_cleaning(self, hotel_id: str, hotel_name: str,
-                                    guest_number: str, guest_room: str, requests: List[str]) -> str:
+                                    guest_number: str, guest_room: str, requests: List[str],
+                                    replace: bool = False) -> str:
         return await self._upsert_service(
             col="Room_cleaning",
             hotel_id=hotel_id, hotel_name=hotel_name,
             guest_number=guest_number, guest_room=guest_room,
             field="room_cleaning", values=requests,
+            replace=replace,
         )
 
     async def get_room_cleaning(self, hotel_id: str) -> Optional[Dict]:
@@ -121,12 +125,14 @@ class MongoClient:
     # ─────────────────────────────────────────────
 
     async def upsert_spa_service(self, hotel_id: str, hotel_name: str,
-                                  guest_number: str, guest_room: str, services: List[str]) -> str:
+                                  guest_number: str, guest_room: str, services: List[str],
+                                  replace: bool = False) -> str:
         return await self._upsert_service(
             col="Spa_Services",
             hotel_id=hotel_id, hotel_name=hotel_name,
             guest_number=guest_number, guest_room=guest_room,
             field="spa_services", values=services,
+            replace=replace,
         )
 
     async def get_spa_services(self, hotel_id: str) -> Optional[Dict]:
@@ -137,12 +143,14 @@ class MongoClient:
     # ─────────────────────────────────────────────
 
     async def upsert_essential_needs(self, hotel_id: str, hotel_name: str,
-                                      guest_number: str, guest_room: str, needs: List[str]) -> str:
+                                      guest_number: str, guest_room: str, needs: List[str],
+                                      replace: bool = False) -> str:
         return await self._upsert_service(
             col="Essential_Needs",
             hotel_id=hotel_id, hotel_name=hotel_name,
             guest_number=guest_number, guest_room=guest_room,
             field="essential_needs", values=needs,
+            replace=replace,
         )
 
     async def get_essential_needs(self, hotel_id: str) -> Optional[Dict]:
@@ -289,15 +297,28 @@ class MongoClient:
 
     async def _upsert_service(self, col: str, hotel_id: str, hotel_name: str,
                                guest_number: str, guest_room: str,
-                               field: str, values: List[str]) -> str:
+                               field: str, values: List[str],
+                               replace: bool = False) -> str:
+        """
+        Upsert service record for a guest.
+        replace=True  → completely replaces existing items with new values (order change)
+        replace=False → appends new values to existing (order addition)
+        """
         doc = await self._db[col].find_one({"hotel_id": hotel_id})
         now = datetime.utcnow()
         if doc:
             guests = doc.get("guests", {})
             gkey = self._guest_key(guests, guest_number)
             if gkey in guests:
-                existing = guests[gkey].get(field, [])
-                guests[gkey][field] = existing + values
+                if replace:
+                    # Replace: discard all previous items, use only new values
+                    guests[gkey][field] = values
+                    logger.info(f"🔄 DB replace | col={col} | guest={guest_number[-4:]}*** | new={values}")
+                else:
+                    # Append: add to existing
+                    existing = guests[gkey].get(field, [])
+                    guests[gkey][field] = existing + values
+                    logger.info(f"➕ DB append | col={col} | guest={guest_number[-4:]}*** | added={values}")
             else:
                 guests[gkey] = {
                     "guest_number": guest_number,
@@ -342,3 +363,6 @@ class MongoClient:
 
 
 mongo_client = MongoClient()
+
+
+

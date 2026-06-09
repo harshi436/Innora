@@ -1,20 +1,20 @@
-"""
+﻿"""
 speech/deepgram_service.py
 
 FIXES v5:
-  ✅ STT NEVER MUTED — mute()/unmute() removed from audio path.
-     Previously: stt.mute() was called during TTS playback → guest audio dropped
-     → barge-in impossible → agent talks over guest.
+  âœ… STT NEVER MUTED â€” mute()/unmute() removed from audio path.
+     Previously: stt.mute() was called during TTS playback â†’ guest audio dropped
+     â†’ barge-in impossible â†’ agent talks over guest.
      Now: ALL guest audio always flows to Deepgram.
 
-  ✅ GHOST TRANSCRIPT FIX — _muted flag kept as a soft filter only.
+  âœ… GHOST TRANSCRIPT FIX â€” _muted flag kept as a soft filter only.
      Instead of dropping audio, we drop TRANSCRIPTS while agent is speaking.
      But barge-in in websocket_server.py fires on interim transcripts BEFORE
-     the filter can drop them — so first word always triggers barge-in.
+     the filter can drop them â€” so first word always triggers barge-in.
 
-  ✅ KeepAlive task — sends ping every 8s while connected (unchanged).
-  ✅ Fresh client per call (unchanged).
-  ✅ Groq Whisper fallback (unchanged).
+  âœ… KeepAlive task â€” sends ping every 8s while connected (unchanged).
+  âœ… Fresh client per call (unchanged).
+  âœ… Groq Whisper fallback (unchanged).
 """
 
 import asyncio
@@ -57,7 +57,7 @@ def _mulaw_to_wav(mulaw_bytes: bytes, sample_rate: int = 8000) -> bytes:
     return buf.getvalue()
 
 
-# ── Groq Whisper fallback ─────────────────────────────────────────────────────
+# â”€â”€ Groq Whisper fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class GroqWhisperFallback:
     FLUSH_SECONDS = 1.5
@@ -80,7 +80,7 @@ class GroqWhisperFallback:
 
     def start(self):
         self._active = True
-        logger.info(f"🎙️ Groq Whisper fallback active | hotel_id={self.hotel_id}")
+        logger.info(f"ðŸŽ™ï¸ Groq Whisper fallback active | hotel_id={self.hotel_id}")
 
     def stop(self):
         self._active = False
@@ -90,9 +90,9 @@ class GroqWhisperFallback:
             asyncio.create_task(self._session.close())
         logger.info(f"Groq Whisper stopped | hotel_id={self.hotel_id}")
 
-    # mute/unmute kept as no-ops for compatibility — but we never call them now
+    # mute/unmute kept as no-ops for compatibility â€” but we never call them now
     def mute(self):
-        pass  # intentionally no-op — never mute STT
+        pass  # intentionally no-op â€” never mute STT
 
     def unmute(self):
         pass  # intentionally no-op
@@ -123,7 +123,7 @@ class GroqWhisperFallback:
         wav_bytes  = _mulaw_to_wav(audio_data, self.SAMPLE_RATE)
         transcript = await self._transcribe(wav_bytes)
         if transcript and transcript.strip():
-            logger.info(f"📝 Groq Whisper [{self.hotel_id}]: {transcript}")
+            logger.info(f"ðŸ“ Groq Whisper [{self.hotel_id}]: {transcript}")
             asyncio.create_task(self.on_final(transcript))
 
     async def _transcribe(self, wav_bytes: bytes) -> Optional[str]:
@@ -155,7 +155,7 @@ class GroqWhisperFallback:
             return None
 
 
-# ── Main STT service ──────────────────────────────────────────────────────────
+# â”€â”€ Main STT service â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class DeepgramService:
 
@@ -172,7 +172,7 @@ class DeepgramService:
         self._keepalive_task: Optional[asyncio.Task] = None
         self._fallback        = GroqWhisperFallback(hotel_id, on_final, on_interim)
 
-    # ── mute/unmute are NO-OPS — we never mute STT ────────────────────────────
+    # â”€â”€ mute/unmute are NO-OPS â€” we never mute STT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Barge-in relies on interim transcripts firing even while agent speaks.
     # Muting STT was the root cause of "agent talks over guest" bug.
 
@@ -184,13 +184,13 @@ class DeepgramService:
         """NO-OP. STT is always active."""
         pass
 
-    # ── Connect ───────────────────────────────────────────────────────────────
+    # â”€â”€ Connect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def connect(self):
         try:
             await self._connect_deepgram()
         except Exception as e:
-            logger.warning(f"Deepgram unavailable ({e}) → Groq Whisper fallback")
+            logger.warning(f"Deepgram unavailable ({e}) â†’ Groq Whisper fallback")
             self._using_fallback = True
             self._fallback.start()
 
@@ -221,7 +221,7 @@ class DeepgramService:
 
         self._connected       = True
         self._reconnect_count = 0
-        logger.info(f"🎙️ Deepgram connected | hotel_id={self.hotel_id}")
+        logger.info(f"ðŸŽ™ï¸ Deepgram connected | hotel_id={self.hotel_id}")
 
         if self._keepalive_task and not self._keepalive_task.done():
             self._keepalive_task.cancel()
@@ -234,7 +234,7 @@ class DeepgramService:
                 if self._connected and self._connection:
                     try:
                         await self._connection.keep_alive()
-                        logger.debug(f"💓 Deepgram KeepAlive sent | {self.hotel_id}")
+                        logger.debug(f"ðŸ’“ Deepgram KeepAlive sent | {self.hotel_id}")
                     except Exception as e:
                         logger.warning(f"KeepAlive failed: {e}")
                         break
@@ -246,11 +246,11 @@ class DeepgramService:
         if self._using_fallback:
             self._fallback.reset()
 
-    # ── Audio feed ────────────────────────────────────────────────────────────
+    # â”€â”€ Audio feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def send_base64_chunk(self, b64_payload: str):
         """
-        Always send audio — never drop it.
+        Always send audio â€” never drop it.
         Barge-in detection needs continuous audio flow.
         """
         if not self._active:
@@ -271,11 +271,11 @@ class DeepgramService:
             try:
                 await self._connection.send(audio_bytes)
             except Exception as e:
-                logger.warning(f"Deepgram send error ({e}) → switching to fallback")
+                logger.warning(f"Deepgram send error ({e}) â†’ switching to fallback")
                 await self._switch_to_fallback()
                 self._fallback.feed(audio_bytes)
 
-    # ── Disconnect ────────────────────────────────────────────────────────────
+    # â”€â”€ Disconnect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def disconnect(self):
         self._active = False
@@ -292,13 +292,13 @@ class DeepgramService:
             self._connected = False
         logger.info(f"STT disconnected | hotel_id={self.hotel_id}")
 
-    # ── Reconnect ─────────────────────────────────────────────────────────────
+    # â”€â”€ Reconnect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _try_reconnect(self):
         if not self._active:
             return
         if self._reconnect_count >= MAX_RECONNECTS:
-            logger.warning(f"[{self.hotel_id}] Max reconnects → Groq Whisper")
+            logger.warning(f"[{self.hotel_id}] Max reconnects â†’ Groq Whisper")
             await self._switch_to_fallback()
             return
 
@@ -315,7 +315,7 @@ class DeepgramService:
     async def _switch_to_fallback(self):
         if self._using_fallback:
             return
-        logger.warning(f"[{self.hotel_id}] STT switching → Groq Whisper")
+        logger.warning(f"[{self.hotel_id}] STT switching â†’ Groq Whisper")
         self._using_fallback = True
         self._connected      = False
         if self._keepalive_task and not self._keepalive_task.done():
@@ -327,32 +327,28 @@ class DeepgramService:
             pass
         self._fallback.start()
 
-    # ── Deepgram event handlers ───────────────────────────────────────────────
+    # â”€â”€ Deepgram event handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _on_transcript(self, _client, result, **kwargs):
         """
-        All transcripts pass through — no mute filtering here.
-        The websocket_server handles barge-in logic based on _agent_talking flag.
-        Ghost transcript filtering (TTS echo) is handled by:
-          1. Twilio "clear" event sent on barge-in — stops TTS audio
-          2. Brief grace period after greeting
-        NOT by dropping audio/transcripts at STT level.
+        All transcripts pass through. The websocket layer decides whether speech
+        is a valid single-user barge-in using audio VAD plus STT confidence.
         """
         try:
-            alt      = result.channel.alternatives[0]
+            alt = result.channel.alternatives[0]
             sentence = alt.transcript
             if not sentence or not sentence.strip():
                 return
+            confidence = float(getattr(alt, "confidence", 0.0) or 0.0)
 
             if result.is_final:
-                logger.info(f"📝 FINAL  [{self.hotel_id}]: {sentence}")
-                asyncio.create_task(self.on_final(sentence))
+                logger.info(f"FINAL [{self.hotel_id}]: {sentence} | confidence={confidence:.2f}")
+                asyncio.create_task(self.on_final(sentence, confidence))
             else:
-                logger.debug(f"📝 INTERIM[{self.hotel_id}]: {sentence}")
-                asyncio.create_task(self.on_interim(sentence))
+                logger.debug(f"INTERIM [{self.hotel_id}]: {sentence} | confidence={confidence:.2f}")
+                asyncio.create_task(self.on_interim(sentence, confidence))
         except Exception as e:
             logger.warning(f"Transcript parse error: {e}")
-
     async def _on_error(self, _client, error, **kwargs):
         logger.error(f"Deepgram error | {self.hotel_id}: {error}")
         await self._switch_to_fallback()

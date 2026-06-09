@@ -139,6 +139,7 @@ async def send_post_call_summary(
     # ── Build order summary section ───────────────────────────────────────────
     order_section = ""
     if order_items:
+        total_line = ""
         items_text = "\n".join(f"  • {item}" for item in order_items)
         order_section = f"\n\n🛎️ *Your Order:*\n{items_text}"
 
@@ -165,6 +166,14 @@ async def send_post_call_summary(
                     order_section += f"\n\n💰 *{total_line}*"
         except Exception as e:
             logger.warning(f"Price fetch error: {e}")
+
+        if not total_line:
+            total_line = "Total: Hotel menu price will be confirmed by staff."
+        elif "total" not in total_line.lower() and "amount" not in total_line.lower():
+            total_line = f"Total: {total_line}"
+
+        if total_line not in order_section:
+            order_section += f"\n\nPrice: *{total_line}*"
 
     # ── Build clean full Hinglish template layout ─────────────────────────────
     message = (

@@ -362,7 +362,7 @@ class QwenService:
                 logger.error(f"Mistral session error: {e}")
 
         logger.error(f"All LLM providers failed | hotel_id={hotel_id}")
-        yield "Main abhi thoda busy hoon. Kripya manager se baat karein."
+        return
 
     # ─────────────────────────────────────────────────────────────
     # PROVIDER INTERNALS
@@ -566,7 +566,6 @@ class QwenService:
 
 
 qwen_service = QwenService()
-
 
 
 

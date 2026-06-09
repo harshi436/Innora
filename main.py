@@ -6,6 +6,7 @@ FIXES v2:
 """
 
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -20,6 +21,46 @@ from websocket.websocket_server import router as ws_router
 from routes.admin import router as admin_router
 from routes.whatsapp import router as whatsapp_router # this is for whatsapp changes are applied 
 from rag.retrieval_service import ensure_collection, retrieval_service
+
+
+def _configure_terminal_logging() -> None:
+    logger.remove()
+
+    if not settings.conversation_log_only:
+        logger.add(sys.stderr, level=settings.log_level)
+        return
+
+    conversation_markers = (
+        "Guest:",
+        "Agent:",
+        "WhatsApp sent",
+        "WhatsApp send failed",
+        "Price",
+        "Total:",
+        "BARGE-IN",
+        "Barge-in complete",
+        "MongoDB connected",
+        "Redis connected",
+        "Qdrant collection ready",
+        "Embedding model preloaded",
+        "Ready | ngrok",
+    )
+
+    def conversation_or_problem(record):
+        return (
+            record["level"].no >= 30
+            or any(marker in record["message"] for marker in conversation_markers)
+        )
+
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        filter=conversation_or_problem,
+        format="{time:HH:mm:ss} | {message}",
+    )
+
+
+_configure_terminal_logging()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -56,7 +97,8 @@ async def lifespan(app: FastAPI):
         await redis_client.connect()
         logger.info("✅ Redis connected")
     except Exception as e:
-        logger.warning(f"⚠️ Redis optional: {e}")
+        logger.error(f"Redis connection failed: {e}")
+        raise
 
     # Qdrant
     try:
@@ -64,7 +106,8 @@ async def lifespan(app: FastAPI):
         await retrieval_service.warmup()
         logger.info("✅ Qdrant collection ready")
     except Exception as e:
-        logger.warning(f"⚠️ Qdrant init issue: {e}")
+        logger.error(f"Qdrant init failed: {e}")
+        raise
 
     # ── FIX: Embedder preload — now works because retrieval_service.py is fixed ──
     # Previously: preload_embedder_sync was nested INSIDE _ensure_embedder()
@@ -74,7 +117,8 @@ async def lifespan(app: FastAPI):
         await retrieval_service.preload_embedder_sync()
         logger.info("⚡ Embedding model preloaded — first call will be fast")
     except Exception as e:
-        logger.warning(f"⚠️ Embedder preload skipped (non-fatal): {e}")
+        logger.error(f"Embedder preload failed: {e}")
+        raise
 
     logger.info(f"✅ Ready | ngrok: {settings.ngrok_url}")
 

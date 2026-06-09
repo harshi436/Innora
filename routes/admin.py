@@ -5,6 +5,7 @@ import os
 import uuid
 import shutil
 import hashlib
+from pathlib import Path
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
@@ -100,19 +101,30 @@ async def upload_pdfs(hotel_id: str, files: List[UploadFile] = File(...)):
     hotel_name = hotel.get("hotel_name") or hotel.get("name", "")
 
     for f in files:
-        if not f.filename.lower().endswith(".pdf"):
+        original_name = Path(f.filename or "").name
+        if not original_name.lower().endswith(".pdf"):
             results.append({"filename": f.filename, "status": "skipped", "reason": "Not a PDF"})
             continue
 
-        fname = f"{hotel_id}_{uuid.uuid4().hex[:8]}_{f.filename}"
+        fname = f"{hotel_id}_{uuid.uuid4().hex[:8]}_{original_name}"
         fpath = os.path.join(UPLOAD_DIR, fname)
         with open(fpath, "wb") as out:
             shutil.copyfileobj(f.file, out)
 
         chunks = await ingest_pdf(filepath=fpath, hotel_id=hotel_id)
+        if chunks <= 0:
+            results.append({
+                "filename": original_name,
+                "chunks": 0,
+                "status": "failed",
+                "reason": "PDF had no extractable text",
+            })
+            logger.warning(f"PDF upload failed: no extractable text | {hotel_id} | {original_name}")
+            continue
+
         await mongo_client.save_hotel_pdf(hotel_id, hotel_name, fname, fpath, chunks)
 
-        results.append({"filename": f.filename, "chunks": chunks, "status": "ingested"})
+        results.append({"filename": original_name, "chunks": chunks, "status": "ingested"})
         logger.info(f"✅ PDF ingested | {hotel_id} | {chunks} chunks")
 
     return {"hotel_id": hotel_id, "results": results}

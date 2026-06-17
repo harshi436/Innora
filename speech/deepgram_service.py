@@ -20,6 +20,7 @@ FIXES v5:
 import asyncio
 import base64
 import io
+import json
 import os
 import wave
 from typing import Callable, Optional
@@ -233,7 +234,7 @@ class DeepgramService:
                 await asyncio.sleep(KEEPALIVE_INTERVAL)
                 if self._connected and self._connection:
                     try:
-                        await self._connection.keep_alive()
+                        await self._connection.send(json.dumps({"type": "KeepAlive"}))
                         logger.debug(f"ðŸ’“ Deepgram KeepAlive sent | {self.hotel_id}")
                     except Exception as e:
                         logger.warning(f"KeepAlive failed: {e}")

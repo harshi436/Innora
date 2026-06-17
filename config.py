@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # ─────────────────────────────────────────────────────
 
     ngrok_url: str = Field(..., alias="NGROK_URL")
-
+    
     # ─────────────────────────────────────────────────────
     # Deepgram
     # ─────────────────────────────────────────────────────
@@ -130,3 +130,15 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     conversation_log_only: bool = Field(default=True, env="CONVERSATION_LOG_ONLY")
 settings = Settings()
+
+
+
+
+
+
+
+
+if settings.ngrok_url:
+    print(f"✅ NGROK URL Loaded Successfully: {settings.ngrok_url}")
+else:
+    print("❌ NGROK_URL not found in .env")

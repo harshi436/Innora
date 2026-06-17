@@ -19,6 +19,7 @@ from qdrant_client.models import (
     FieldCondition,
     MatchValue,
     FilterSelector,
+    PayloadSchemaType,
 )
 from sentence_transformers import SentenceTransformer
 import pdfplumber
@@ -91,7 +92,10 @@ class RetrievalService:
         try:
             logger.info(f"⚡ Preloading embedding model: {EMBEDDING_MODEL}")
             # Load synchronously — safe at startup, avoids event loop binding issues
-            self._embedder = SentenceTransformer(EMBEDDING_MODEL)
+            self._embedder = await asyncio.to_thread(
+                      SentenceTransformer,
+                      EMBEDDING_MODEL
+            )
             logger.info(f"✅ Embedding model preloaded: {EMBEDDING_MODEL}")
         except Exception as e:
             logger.error(f"Embedder preload failed: {e}")
@@ -113,14 +117,34 @@ class RetrievalService:
                 logger.info(f"✅ Qdrant collection created: {settings.qdrant_collection}")
             else:
                 logger.info(f"✅ Qdrant collection exists: {settings.qdrant_collection}")
+
+            await self._ensure_payload_indexes(client)
         except Exception as e:
             logger.error(f"ensure_collection error: {e}")
             raise
+
+    async def _ensure_payload_indexes(self, client: AsyncQdrantClient) -> None:
+        """Create payload indexes required by filtered Qdrant queries."""
+        collection_info = await client.get_collection(settings.qdrant_collection)
+        payload_schema = getattr(collection_info, "payload_schema", {}) or {}
+
+        if "hotel_id" in payload_schema:
+            logger.info("Qdrant payload index exists: hotel_id")
+            return
+
+        await client.create_payload_index(
+            collection_name=settings.qdrant_collection,
+            field_name="hotel_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+            wait=True,
+        )
+        logger.info("Qdrant payload index created: hotel_id keyword")
 
     async def delete_hotel_data(self, hotel_id: str) -> None:
         """Delete ALL existing vectors for hotel_id from Qdrant."""
         try:
             client = await self._ensure_client()
+            await self._ensure_payload_indexes(client)
             await client.delete(
                 collection_name=settings.qdrant_collection,
                 points_selector=FilterSelector(
@@ -219,6 +243,7 @@ class RetrievalService:
             )
 
             client = await self._ensure_client()
+            await self._ensure_payload_indexes(client)
             results = await client.search(
                 collection_name=settings.qdrant_collection,
                 query_vector=query_vec,

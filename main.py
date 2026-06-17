@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
     # Qdrant
     try:
         await ensure_collection()
-        await retrieval_service.warmup()
+        #await retrieval_service.warmup()
         logger.info("✅ Qdrant collection ready")
     except Exception as e:
         logger.error(f"Qdrant init failed: {e}")

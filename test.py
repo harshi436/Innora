@@ -16,7 +16,7 @@ load_dotenv()
 # NUMBER
 # =========================
 
-to_number = sys.argv[1] if len(sys.argv) > 1 else "+917580966465"
+to_number = sys.argv[1] if len(sys.argv) > 1 else "+919327279077"
 
 # =========================
 # ENV

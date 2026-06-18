@@ -22,6 +22,7 @@ DESIGN:
 
 import asyncio
 import json
+import re
 from typing import Optional, List, Dict
 
 import aiohttp
@@ -69,6 +70,48 @@ _CALL_REQUEST_PATTERNS = [
     "baat karni hai", "call chahiye", "please call", "mujhe call", "firse phone",
     "speak to someone", "talk to someone", "human se baat", "call me back"
 ]
+
+
+def _clean_phone(number: str) -> str:
+    """Normalize Twilio/WhatsApp phone strings to a comparable E.164-ish value."""
+    clean = (number or "").replace("whatsapp:", "").strip()
+    clean = re.sub(r"[^\d+]", "", clean)
+    if clean and not clean.startswith("+"):
+        clean = f"+{clean}"
+    return clean
+
+
+def _phone_variants(number: str) -> List[str]:
+    """Build common Redis lookup variants for Indian local/E.164 inputs."""
+    clean = _clean_phone(number)
+    digits = re.sub(r"\D", "", clean)
+    variants = []
+    for value in (clean, digits, f"+{digits}" if digits else "", f"+91{digits}" if len(digits) == 10 else ""):
+        if value and value not in variants:
+            variants.append(value)
+    return variants
+
+
+async def _find_wa_session_for_guest(guest_number: str) -> Optional[Dict]:
+    """
+    Twilio Sandbox inbound messages always arrive To=+14155238886, so hotel lookup
+    must fall back to the post-call WhatsApp session saved for this guest.
+    """
+    for variant in _phone_variants(guest_number):
+        keys = await redis_client.scan_keys(f"wa_session:*:{variant}")
+        for key in keys:
+            raw = await redis_client.get(key)
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            hotel_id = data.get("hotel_id", "")
+            if not hotel_id:
+                continue
+            return {"key": key, "data": data}
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -278,18 +321,19 @@ async def _save_wa_turn(guest_number: str, hotel_id: str, hotel_name: str, manag
         logger.warning(f"WA session save turn error: {e}")
 
 
-async def _trigger_outbound_call(guest_number: str, hotel_id: str) -> bool:
+async def _trigger_outbound_call(guest_number: str, hotel: Dict) -> bool:
     """Fires instantaneous automated telephonic outbound connection"""
     try:
         ngrok_base  = settings.ngrok_url.rstrip("/")
         webhook_url = f"{ngrok_base}/incoming-call"
+        hotel_from_number = _clean_phone(hotel.get("dialed_number", "")) or clean_from_number
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Calls.json",
                 data={
                     "To":     guest_number,
-                    "From":   clean_from_number, # Reuses original twilio voice number
+                    "From":   hotel_from_number,
                     "Url":    webhook_url,
                     "Method": "POST",
                 },
@@ -313,32 +357,49 @@ async def _trigger_outbound_call(guest_number: str, hotel_id: str) -> bool:
 
 async def handle_inbound_whatsapp(from_number: str, body: str, to_number: str) -> str:
     """Main Omnichannel Core Routing Hub"""
-    guest_number = from_number.replace("whatsapp:", "").strip()
-    hotel_wa_num = to_number.replace("whatsapp:", "").strip()
+    guest_number = _clean_phone(from_number)
+    hotel_wa_num = _clean_phone(to_number)
 
     logger.info(f"📲 WA inbound | from={guest_number[-4:]}*** | msg={body[:60]}")
 
     # ── Load hotel ────────────────────────────────────────────────────────────
     hotel = await mongo_client.get_hotel_by_dialed_number(hotel_wa_num)
-    
-    # 🔥 ULTRA LOCAL OVERRIDE FALLBACK FOR SANDBOX TESTING (Zero DB Error Dependencies)
+    session_data = {}
+    session_key = ""
+
     if not hotel:
-        logger.warning(f"WA: no hotel for number {hotel_wa_num}. Using local fallback context override for Taj Hotel (Shri_003)")
-        hotel = {
-            "hotel_id": "Shri_003",
-            "hotel_name": "Taj",
-            "manager_contact": "9327279077",
-            "system_prompt": "You are a professional, warm, and helpful AI concierge for SHRI MAYA. Answer accurately and keep responses brief."
-        }
+        session_hit = await _find_wa_session_for_guest(guest_number)
+        if session_hit:
+            session_key = session_hit["key"]
+            session_data = session_hit["data"]
+            session_hotel_id = session_data.get("hotel_id", "")
+            hotel = await mongo_client.get_hotel_by_id(session_hotel_id) or {
+                "hotel_id": session_hotel_id,
+                "hotel_name": session_data.get("hotel_name", "Hotel"),
+                "manager_contact": session_data.get("manager_contact", ""),
+            }
+            logger.info(
+                f"WA: sandbox To={hotel_wa_num}; using saved session "
+                f"hotel={hotel.get('hotel_name')} ({session_hotel_id}) for guest={guest_number[-4:]}***"
+            )
+    
+    # Sandbox/direct-message fallback: never guess a hotel without a saved guest session.
+    if not hotel:
+        logger.warning(f"WA: no hotel/session found | to={hotel_wa_num} | guest={guest_number[-4:]}***")
+        return (
+            "Maafi chahte hain, is WhatsApp number ke liye hotel context nahi mil raha. "
+            "Kripya call ke baad aaye hotel message par reply karein ya hotel reception se sampark karein."
+        )
 
     hotel_id        = hotel.get("hotel_id", "")
     hotel_name      = hotel.get("hotel_name") or hotel.get("name", "Hotel")
     manager_contact = hotel.get("manager_contact") or hotel.get("manager_phone", "")
     system_prompt   = hotel.get("system_prompt", "")
 
-    wa_key = f"wa_session:{hotel_id}:{guest_number}"
-    raw_session = await redis_client.get(wa_key)
-    session_data = json.loads(raw_session) if raw_session else {}
+    wa_key = session_key or f"wa_session:{hotel_id}:{guest_number}"
+    if not session_data:
+        raw_session = await redis_client.get(wa_key)
+        session_data = json.loads(raw_session) if raw_session else {}
     summary_sent      = session_data.get("summary_sent", False)
     order_items       = session_data.get("order_items", [])
     first_reply_after = summary_sent and not session_data.get("first_reply_done", False)
@@ -348,13 +409,14 @@ async def handle_inbound_whatsapp(from_number: str, body: str, to_number: str) -
     # 🚀 CONDITIONAL INTERCEPT: Outbound call triggering structure loop
     if _is_call_request(body):
         logger.info(f"📞 WA call request | guest={guest_number[-4:]}***")
-        call_triggered = await _trigger_outbound_call(guest_number, hotel_id)
+        call_triggered = await _trigger_outbound_call(guest_number, hotel)
 
         if call_triggered:
+            hotel_from_number = _clean_phone(hotel.get("dialed_number", "")) or clean_from_number
             reply = (
                 f"✅ Hum aapko abhi call kar rahe hain! 📞\n"
                 f"Kripya apna phone ready rakhein — "
-                f"{clean_from_number} se call aayegi."
+                f"{hotel_from_number} se call aayegi."
             )
         else:
             reply = (
@@ -396,7 +458,9 @@ async def handle_inbound_whatsapp(from_number: str, body: str, to_number: str) -
         f"Manager contact: {manager_contact}"
     )
 
-    messages = history + [{"role": "user", "content": body}]
+    messages = history
+    if not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != body:
+        messages = messages + [{"role": "user", "content": body}]
 
     # 📝 CONDITIONAL CHAT GENERATION VIA QWEN ENGINE
     try:
@@ -418,3 +482,16 @@ async def handle_inbound_whatsapp(from_number: str, body: str, to_number: str) -
     await _save_wa_turn(guest_number, hotel_id, hotel_name, manager_contact, "assistant", reply)
     logger.info(f"📲 WA reply | to={guest_number[-4:]}*** | {reply[:60]}")
     return reply
+
+
+
+
+
+
+
+
+
+
+
+
+#Guest ko pehle Shreemaya call ke baad WhatsApp message jaana chahiye, taaki Redis session save ho.

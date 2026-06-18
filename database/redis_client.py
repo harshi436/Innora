@@ -327,6 +327,19 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Redis DELETE error: {e}")
 
+    async def scan_keys(self, pattern: str, count: int = 100) -> List[str]:
+        """Return keys matching a Redis pattern without blocking the server."""
+        try:
+            if not self._client:
+                return []
+            keys = []
+            async for key in self._client.scan_iter(match=pattern, count=count):
+                keys.append(key)
+            return keys
+        except Exception as e:
+            logger.error(f"Redis SCAN error: {e}")
+            return []
+
 
 redis_client = RedisClient()
 
